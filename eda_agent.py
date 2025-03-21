@@ -56,7 +56,59 @@ class EDAAgent(BaseAgent):
         except Exception as e:
             return f"Erreur lors de l'analyse: {str(e)}\n{traceback.format_exc()}"
     
-    
+    def execute_code(self, code_to_execute, local_vars=None):
+        """Exécute un bloc de code Python et capture la sortie et les graphiques."""
+        if local_vars is None:
+            local_vars = {}
+        
+        # Capturer la sortie standard et d'erreur
+        output_buffer = io.StringIO()
+        
+        # Créer un environnement d'exécution
+        exec_globals = {
+            'pd': pd,
+            'np': np,
+            'plt': plt,
+            'sns': sns,
+            **local_vars
+        }
+        
+        # Liste pour stocker les figures générées
+        figures = []
+        
+        try:
+            # Sauvegarder la configuration de matplotlib
+            original_backend = plt.get_backend()
+            plt.switch_backend('Agg')
+            
+            # Rediriger stdout et stderr
+            with redirect_stdout(output_buffer), redirect_stderr(output_buffer):
+                # Exécuter le code
+                exec(code_to_execute, exec_globals)
+                
+                # Capturer toutes les figures ouvertes
+                for i in plt.get_fignums():
+                    fig = plt.figure(i)
+                    buf = io.BytesIO()
+                    fig.savefig(buf, format='png', bbox_inches='tight')
+                    buf.seek(0)
+                    img_str = base64.b64encode(buf.read()).decode('utf-8')
+                    figures.append(img_str)
+                    buf.close()
+                
+                # Fermer toutes les figures pour éviter les fuites de mémoire
+                plt.close('all')
+            
+            # Restaurer le backend
+            plt.switch_backend(original_backend)
+            
+            return output_buffer.getvalue(), figures, exec_globals
+            
+        except Exception as e:
+            error_msg = f"Erreur lors de l'exécution du code: {str(e)}\n"
+            error_msg += traceback.format_exc()
+            return error_msg, figures, exec_globals
+        
     def _analyze_local_dataset(self, dataset_path: str) -> str:
         """Analyse un dataset local avec exécution de code et visualisations."""
         try:
